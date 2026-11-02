@@ -1,115 +1,148 @@
-package recloudstream
+package com.ligustrum
 
-import com.fasterxml.jackson.annotation.JsonProperty
-import com.lagradost.cloudstream3.HomePageList
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.SearchResponseList
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.toNewSearchResponseList
-import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
+import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.StringUtils.encodeUri
 import com.lagradost.cloudstream3.utils.loadExtractor
+import org.jsoup.nodes.Element
 
-class DailymotionProvider : MainAPI() {
-
-    data class VideoSearchResponse(
-        @JsonProperty("list") val list: List<VideoItem>
-    )
-
-    data class VideoItem(
-        @JsonProperty("id") val id: String,
-        @JsonProperty("title") val title: String,
-        @JsonProperty("thumbnail_360_url") val thumbnail360Url: String
-    )
-
-    data class VideoDetailResponse(
-        @JsonProperty("id") val id: String,
-        @JsonProperty("title") val title: String,
-        @JsonProperty("description") val description: String,
-        @JsonProperty("thumbnail_720_url") val thumbnail720Url: String
-    )
-
-    override var mainUrl = "https://api.dailymotion.com"
-    override var name = "Dailymotion"
-    override val supportedTypes = setOf(TvType.Others)
-
-    override var lang = "en"
-
+class WatchAnimeWorldProvider : MainAPI() {
+    override var mainUrl = "https://watchanimeworld.one"
+    override var name = "Watch Anime World"
+    override val supportedTypes = setOf(TvType.Anime, TvType.Cartoon)
+    override var lang = "hi" // Primary language set to Hindi
     override val hasMainPage = true
 
+    // 1. Home Page Sections (Populates CloudStream home screen)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=26&page=$page").text
-        val popular = tryParseJson<VideoSearchResponse>(response)?.list ?: emptyList()
+        val document = app.get(mainUrl).document
+        val homeCategories = ArrayList<HomePageList>()
 
-        return newHomePageResponse(
-            listOf(
-                HomePageList(
-                    "Popular",
-                    popular.map { it.toSearchResponse(this) },
-                    true
-                ),
+        // Recent Episodes / Latest Series
+        val items = document.select("ul#episode_by_temp li, section.episodes ul.post-lst li").mapNotNull { element ->
+            element.toSearchResult()
+        }
+
+        if (items.isNotEmpty()) {
+            homeCategories.add(HomePageList("Latest Anime & Cartoons", items))
+        }
+
+        return newHomePageResponse(homeCategories)
+    }
+
+    // Helper extension to convert HTML element to SearchResult
+    private fun Element.toSearchResult(): SearchResponse? {
+        val linkElement = this.selectFirst("a.lnk-blk") ?: return null
+        val href = fixUrlNull(linkElement.attr("href")) ?: return null
+        val title = this.selectFirst("h2.entry-title")?.text() ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("div.post-thumbnail img, figure img")?.attr("src"))
+
+        return newAnimeSearchResponse(title, href, TvType.Anime) {
+            this.posterUrl = posterUrl
+        }
+    }
+
+    // 2. Search Functionality
+    override suspend fun search(query: String): List<SearchResponse> {
+        val searchUrl = "$mainUrl/?s=$query"
+        val document = app.get(searchUrl).document
+
+        return document.select("article.post").mapNotNull { article ->
+            val title = article.selectFirst("h2.entry-title")?.text() ?: return@mapNotNull null
+            val href = fixUrlNull(article.selectFirst("a.lnk-blk")?.attr("href")) ?: return@mapNotNull null
+            val posterUrl = fixUrlNull(article.selectFirst("div.post-thumbnail img, figure img")?.attr("src"))
+
+            newAnimeSearchResponse(title, href, TvType.Anime) {
+                this.posterUrl = posterUrl
+            }
+        }
+    }
+
+    // 3. Load Series & Episodes Details
+    override suspend fun load(url: String): LoadResponse {
+        val document = app.get(url).document
+        val title = document.selectFirst("title")?.text()?.replace(" - Anime World India", "")?.trim() ?: "Anime"
+        val posterUrl = fixUrlNull(document.selectFirst("div.bghd img, div.post-thumbnail img")?.attr("src"))
+        val description = document.selectFirst("div.overviewCss, entry-content")?.text()
+
+        // Extract episodes
+        val episodes = document.select("ul#episode_by_temp li").mapNotNull { element ->
+            val link = fixUrlNull(element.selectFirst("a.lnk-blk")?.attr("href")) ?: return@mapNotNull null
+            val epTitle = element.selectFirst("h2.entry-title")?.text() ?: "Episode"
+            val epNumText = element.selectFirst("span.num-epi")?.text()
+
+            // Parse Season & Episode numbers if available (e.g., 4x2)
+            var seasonNum: Int? = null
+            var epNum: Int? = null
+            if (epNumText != null && epNumText.contains("x")) {
+                val parts = epNumText.split("x")
+                seasonNum = parts.getOrNull(0)?.toIntOrNull()
+                epNum = parts.getOrNull(1)?.toIntOrNull()
+            }
+
+            Episode(
+                data = link,
+                name = epTitle,
+                season = seasonNum,
+                episode = epNum,
+                posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
             )
-        )
-    }
+        }
 
-    override suspend fun search(query: String, page: Int): SearchResponseList? {
-        val response = app.get("$mainUrl/videos?fields=id,title,thumbnail_360_url&limit=26&page=$page&search=${query.encodeUri()}").text
-        val searchResults = tryParseJson<VideoSearchResponse>(response)?.list
-        return searchResults?.map {
-            it.toSearchResponse(this)
-        }?.toNewSearchResponseList()
-    }
-
-    override suspend fun load(url: String): LoadResponse? {
-        val videoId = Regex("dailymotion.com/video/([a-zA-Z0-9]+)").find(url)?.groups?.get(1)?.value
-        val response = app.get("$mainUrl/video/$videoId?fields=id,title,description,thumbnail_720_url").text
-        val videoDetail = tryParseJson<VideoDetailResponse>(response) ?: return null
-        return videoDetail.toLoadResponse(this)
-    }
-
-    private fun VideoItem.toSearchResponse(provider: DailymotionProvider): SearchResponse {
-        return provider.newMovieSearchResponse(
-            this.title,
-            "https://www.dailymotion.com/video/${this.id}",
-            TvType.Movie
-        ) {
-            this.posterUrl = thumbnail360Url
+        return newAnimeLoadResponse(title, url, TvType.Anime) {
+            this.posterUrl = posterUrl
+            this.plot = description
+            this.episodes = episodes
         }
     }
 
-    private suspend fun VideoDetailResponse.toLoadResponse(provider: DailymotionProvider): LoadResponse {
-        return provider.newMovieLoadResponse(
-            this.title,
-            "https://www.dailymotion.com/video/${this.id}",
-            TvType.Movie,
-            this.id
-        ) {
-            plot = description
-            posterUrl = thumbnail720Url
-        }
-    }
-
+    // 4. Extract Video Streams (Multi-Server Selection)
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        loadExtractor(
-            "https://www.dailymotion.com/embed/video/$data",
-            subtitleCallback,
-            callback
-        )
+        val document = app.get(data).document
+        
+        // Target all player options (Server 1 / Zephyrix and Server 2 / Abyss)
+        val iframeElements = document.select("aside.video-player div.video iframe")
+
+        for (iframe in iframeElements) {
+            // Get iframe src (checking both data-src and src attributes)
+            val rawSrc = iframe.attr("data-src").ifEmpty { iframe.attr("src") }
+            val iframeUrl = fixUrlNull(rawSrc) ?: continue
+
+            // 1. Handle Direct Extractor-supported players (e.g., AbyssPlayer / Zephyrix)
+            val loaded = loadExtractor(iframeUrl, data, subtitleCallback) { link ->
+                callback(link)
+            }
+
+            // 2. Fallback: If no auto-extractor is found, load iframe page directly to resolve stream
+            if (!loaded) {
+                try {
+                    val iframeDoc = app.get(iframeUrl, headers = mapOf("Referer" to mainUrl)).document
+                    val directVideoSrc = iframeDoc.selectFirst("video source, video")?.attr("src")
+
+                    if (!directVideoSrc.isNullOrEmpty()) {
+                        val serverName = if (iframeUrl.contains("zephyrix")) "Server 1 (Zephyrix)" else "Server 2 (Abyss)"
+                        callback(
+                            ExtractorLink(
+                                source = name,
+                                name = serverName,
+                                url = fixUrl(directVideoSrc),
+                                referer = iframeUrl,
+                                quality = Qualities.Unknown.value,
+                                isM3u8 = directVideoSrc.contains(".m3u8")
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
         return true
     }
 }
