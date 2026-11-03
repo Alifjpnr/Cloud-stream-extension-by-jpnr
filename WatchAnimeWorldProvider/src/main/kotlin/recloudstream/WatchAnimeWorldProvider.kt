@@ -8,15 +8,13 @@ class WatchAnimeWorldProvider : MainAPI() {
     override var mainUrl = "https://watchanimeworld.one"
     override var name = "Watch Anime World"
     override val supportedTypes = setOf(TvType.Anime, TvType.Cartoon)
-    override var lang = "hi" // Primary language set to Hindi
+    override var lang = "hi"
     override val hasMainPage = true
 
-    // 1. Home Page Sections (Populates CloudStream home screen)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(mainUrl).document
         val homeCategories = ArrayList<HomePageList>()
 
-        // Recent Episodes / Latest Series
         val items = document.select("ul#episode_by_temp li, section.episodes ul.post-lst li").mapNotNull { element ->
             element.toSearchResult()
         }
@@ -28,7 +26,6 @@ class WatchAnimeWorldProvider : MainAPI() {
         return newHomePageResponse(homeCategories)
     }
 
-    // Helper extension to convert HTML element to SearchResult
     private fun Element.toSearchResult(): SearchResponse? {
         val linkElement = this.selectFirst("a.lnk-blk") ?: return null
         val href = fixUrlNull(linkElement.attr("href")) ?: return null
@@ -40,7 +37,6 @@ class WatchAnimeWorldProvider : MainAPI() {
         }
     }
 
-    // 2. Search Functionality
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/?s=$query"
         val document = app.get(searchUrl).document
@@ -56,20 +52,17 @@ class WatchAnimeWorldProvider : MainAPI() {
         }
     }
 
-    // 3. Load Series & Episodes Details
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
         val title = document.selectFirst("title")?.text()?.replace(" - Anime World India", "")?.trim() ?: "Anime"
         val posterUrl = fixUrlNull(document.selectFirst("div.bghd img, div.post-thumbnail img")?.attr("src"))
         val description = document.selectFirst("div.overviewCss, entry-content")?.text()
 
-        // Extract episodes into a mutable list
         val episodes = document.select("ul#episode_by_temp li").mapNotNull { element ->
             val link = fixUrlNull(element.selectFirst("a.lnk-blk")?.attr("href")) ?: return@mapNotNull null
             val epTitle = element.selectFirst("h2.entry-title")?.text() ?: "Episode"
             val epNumText = element.selectFirst("span.num-epi")?.text()
 
-            // Parse Season & Episode numbers if available (e.g., 4x2)
             var seasonNum: Int? = null
             var epNum: Int? = null
             if (epNumText != null && epNumText.contains("x")) {
@@ -85,7 +78,7 @@ class WatchAnimeWorldProvider : MainAPI() {
                 episode = epNum,
                 posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
             )
-        }.toMutableList() // Fixed: converted to MutableList to match expected type[span_3](start_span)[span_3](end_span)
+        }.toMutableList()
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = posterUrl
@@ -94,7 +87,6 @@ class WatchAnimeWorldProvider : MainAPI() {
         }
     }
 
-    // 4. Extract Video Streams (Multi-Server Selection)
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -102,20 +94,16 @@ class WatchAnimeWorldProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        
-        // Target all player options (Server 1 / Zephyrix and Server 2 / Abyss)
         val iframeElements = document.select("aside.video-player div.video iframe")
 
         for (iframe in iframeElements) {
             val rawSrc = iframe.attr("data-src").ifEmpty { iframe.attr("src") }
             val iframeUrl = fixUrlNull(rawSrc) ?: continue
 
-            // 1. Handle Direct Extractor-supported players
             val loaded = loadExtractor(iframeUrl, data, subtitleCallback) { link ->
                 callback(link)
             }
 
-            // 2. Fallback: If no auto-extractor is found, load iframe page directly to resolve stream
             if (!loaded) {
                 try {
                     val iframeDoc = app.get(iframeUrl, headers = mapOf("Referer" to mainUrl)).document
@@ -124,17 +112,15 @@ class WatchAnimeWorldProvider : MainAPI() {
                     if (!directVideoSrc.isNullOrEmpty()) {
                         val serverName = if (iframeUrl.contains("zephyrix")) "Server 1 (Zephyrix)" else "Server 2 (Abyss)"
                         
-                        // Fixed: Using modern newExtractorLink builder instead of deprecated constructor[span_4](start_span)[span_4](end_span)
                         callback(
-                            newExtractorLink(
+                            ExtractorLink(
+                                source = serverName,
                                 name = serverName,
-                                source = name,
                                 url = fixUrl(directVideoSrc),
-                                type = if (directVideoSrc.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                            ) {
-                                this.referer = iframeUrl
-                                this.quality = Qualities.Unknown.value
-                            }
+                                referer = iframeUrl,
+                                quality = Qualities.Unknown.value,
+                                isM3u8 = directVideoSrc.contains(".m3u8")
+                            )
                         )
                     }
                 } catch (e: Exception) {
