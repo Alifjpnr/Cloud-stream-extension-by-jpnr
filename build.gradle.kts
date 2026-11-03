@@ -5,7 +5,7 @@ cloudstream {
     language = "hi"
     // All of these properties are optional, you can safely remove any of them.
     description = "Hindi, Tamil and Telugu dubbed anime and cartoons from WatchAnimeWorld"
-    authors = listOf("YourName")
+    authors = listOf("Alif")
 
     /**
      * Status int as one of the following:
