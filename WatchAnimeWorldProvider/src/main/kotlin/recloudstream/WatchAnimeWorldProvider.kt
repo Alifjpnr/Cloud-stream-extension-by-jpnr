@@ -300,6 +300,86 @@ class WatchAnimeWorldProvider : MainAPI() {
         val img = selectFirst("img")
         val title = img?.attr("alt")?.removePrefix("Image ")?.trim()
         if (title.isNullOrBlank()) return null
+        val poster = fixUrlNull(img?.attr("src"))?.replace("/original/", "/w500/")
+        return buildResult(title, href, poster, "")
+    }
+
+    private fun buildResult(
+        title: String,
+        href: String,
+        poster: String?,
+        categories: String
+    ): SearchResponse {
+        val isMovie = href.contains("/movies/")
+        // Cards without category info (home widgets) are treated as anime.
+        val isAnime = categories.isBlank() || categories.contains("category-anime")
+
+        return when {
+            isMovie -> newMovieSearchResponse(
+                title,
+                href,
+                if (isAnime) TvType.AnimeMovie else TvType.Movie
+            ) {
+                this.posterUrl = poster
+            }
+            isAnime -> newAnimeSearchResponse(title, href, TvType.Anime) {
+                this.posterUrl = poster
+                addDubStatus(DubStatus.Dubbed)
+            }
+            else -> newTvSeriesSearchResponse(title, href, TvType.Cartoon) {
+                this.posterUrl = poster
+            }
+        }
+    }
+}
+tps?://[^\s"'<>\\]+\.(?:m3u8|mp4)[^\s"'<>\\]*""")
+        for (match in direct.findAll(text)) {
+            emitDirect(match.value, url, callback)
+            found = true
+        }
+
+        val abyss = Regex("""https?://player\.abyssplayer\.com/[A-Za-z0-9_-]+""")
+        for (match in abyss.findAll(text)) {
+            if (loadExtractor(match.value, url, subtitleCallback, callback)) found = true
+        }
+
+        return found
+    }
+
+    private suspend fun emitDirect(link: String, referer: String, callback: (ExtractorLink) -> Unit) {
+        if (link.contains(".m3u8")) {
+            M3u8Helper.generateM3u8(name, link, referer).forEach(callback)
+        } else {
+            callback(
+                newExtractorLink(name, name, link, ExtractorLinkType.VIDEO) {
+                    this.referer = referer
+                    this.quality = Qualities.Unknown.value
+                }
+            )
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Card parsing helpers
+    // ------------------------------------------------------------------
+
+    private fun Element.toSearchResult(): SearchResponse? {
+        val href = fixUrlNull(selectFirst("a.lnk-blk")?.attr("href")) ?: return null
+        val title = selectFirst("h2.entry-title")?.text()?.trim()
+        if (title.isNullOrBlank()) return null
+        val img = selectFirst("img")
+        val poster = fixUrlNull(
+            img?.attr("src")?.takeIf { it.isNotBlank() } ?: img?.attr("data-src")
+        )
+        val categories = parent()?.className().orEmpty()
+        return buildResult(title, href, poster, categories)
+    }
+
+    private fun Element.toTopPickResult(): SearchResponse? {
+        val href = fixUrlNull(attr("href")) ?: return null
+        val img = selectFirst("img")
+        val title = img?.attr("alt")?.removePrefix("Image ")?.trim()
+        if (title.isNullOrBlank()) return null
         val poster = fixUrlNull(img.attr("src"))?.replace("/original/", "/w500/")
         return buildResult(title, href, poster, "")
     }
