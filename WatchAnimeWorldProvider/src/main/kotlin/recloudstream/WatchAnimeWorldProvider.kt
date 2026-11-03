@@ -1,4 +1,3 @@
-
 package recloudstream
 
 import com.lagradost.cloudstream3.*
@@ -23,8 +22,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         "" to "Latest Anime & Cartoons"
     )
 
-    // IMAGE URL
-
+    // IMAGE URL HELPER
     private fun Element.imageUrl(): String? {
         val img = selectFirst("img") ?: return null
 
@@ -36,8 +34,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         return fixUrlNull(src)
     }
 
-    // SEARCH RESULT
-
+    // SEARCH RESULT HELPER
     private fun Element.toSearchResult(): SearchResponse? {
         val link = selectFirst("a.lnk-blk[href], a[href]")
             ?: return null
@@ -63,7 +60,6 @@ class WatchAnimeWorldProvider : MainAPI() {
     }
 
     // HOMEPAGE
-
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
@@ -91,7 +87,6 @@ class WatchAnimeWorldProvider : MainAPI() {
     }
 
     // SEARCH
-
     override suspend fun search(
         query: String
     ): List<SearchResponse>? {
@@ -110,7 +105,6 @@ class WatchAnimeWorldProvider : MainAPI() {
     }
 
     // LOAD DETAILS
-
     override suspend fun load(
         url: String
     ): LoadResponse? {
@@ -206,7 +200,6 @@ class WatchAnimeWorldProvider : MainAPI() {
     }
 
     // MEDIA URL RESOLVER
-
     private fun resolveUrl(
         base: String,
         path: String
@@ -235,7 +228,6 @@ class WatchAnimeWorldProvider : MainAPI() {
     }
 
     // LOAD LINKS
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
