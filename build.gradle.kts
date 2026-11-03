@@ -9,6 +9,9 @@ buildscript {
         mavenCentral()
         maven("https://jitpack.io")
     }
+// Add your provider modules here:
+include(":YoutubeProvider")
+include(":WatchAnimeWorldProvider")
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
