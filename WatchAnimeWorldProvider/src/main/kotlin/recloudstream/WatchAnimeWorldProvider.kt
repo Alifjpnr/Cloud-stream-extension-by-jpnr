@@ -56,7 +56,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         val document = app.get(url).document
         val title = document.selectFirst("title")?.text()?.replace(" - Anime World India", "")?.trim() ?: "Anime"
         val posterUrl = fixUrlNull(document.selectFirst("div.bghd img, div.post-thumbnail img")?.attr("src"))
-        val description = document.selectFirst("div.overviewCss, entry-content")?.text()
+        val description = document.selectFirst("div.overviewCss, .entry-content")?.text()
 
         val episodes = document.select("ul#episode_by_temp li").mapNotNull { element ->
             val link = fixUrlNull(element.selectFirst("a.lnk-blk")?.attr("href")) ?: return@mapNotNull null
@@ -71,19 +71,18 @@ class WatchAnimeWorldProvider : MainAPI() {
                 epNum = parts.getOrNull(1)?.toIntOrNull()
             }
 
-            Episode(
-                data = link,
-                name = epTitle,
-                season = seasonNum,
-                episode = epNum,
-                posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
-            )
-        }.toMutableList()
+            newEpisode(link) {
+                this.name = epTitle
+                this.season = seasonNum
+                this.episode = epNum
+                this.posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
+            }
+        }
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = posterUrl
             this.plot = description
-            this.episodes = episodes
+            addEpisodes(DubStatus.Subbed, episodes)
         }
     }
 
@@ -111,7 +110,7 @@ class WatchAnimeWorldProvider : MainAPI() {
 
                     if (!directVideoSrc.isNullOrEmpty()) {
                         val serverName = if (iframeUrl.contains("zephyrix")) "Server 1 (Zephyrix)" else "Server 2 (Abyss)"
-                        
+
                         callback(
                             newExtractorLink(
                                 source = serverName,
