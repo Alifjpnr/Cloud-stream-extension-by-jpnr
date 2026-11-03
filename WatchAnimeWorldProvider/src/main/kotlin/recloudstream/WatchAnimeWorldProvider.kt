@@ -113,14 +113,15 @@ class WatchAnimeWorldProvider : MainAPI() {
                         val serverName = if (iframeUrl.contains("zephyrix")) "Server 1 (Zephyrix)" else "Server 2 (Abyss)"
                         
                         callback(
-                            ExtractorLink(
+                            newExtractorLink(
                                 source = serverName,
                                 name = serverName,
                                 url = fixUrl(directVideoSrc),
-                                referer = iframeUrl,
-                                quality = Qualities.Unknown.value,
-                                isM3u8 = directVideoSrc.contains(".m3u8")
-                            )
+                                type = if (directVideoSrc.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = iframeUrl
+                                this.quality = Qualities.Unknown.value
+                            }
                         )
                     }
                 } catch (e: Exception) {
