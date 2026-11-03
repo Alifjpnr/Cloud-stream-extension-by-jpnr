@@ -47,7 +47,7 @@ subprojects {
 
         defaultConfig {
             minSdk = 21
-            compileSdk = 35
+            compileSdkVersion(35)
             targetSdk = 35
         }
 
@@ -58,7 +58,7 @@ subprojects {
 
         tasks.withType<KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_11) // Updated to match Java 11 bytecode requirement
+                jvmTarget.set(JvmTarget.JVM_11)
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
