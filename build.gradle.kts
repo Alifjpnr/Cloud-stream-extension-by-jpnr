@@ -1,9 +1,10 @@
+import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+
 // use an integer for version numbers
 version = 1
 
-cloudstream {
+configure<CloudstreamExtension> {
     language = "hi"
-    // All of these properties are optional, you can safely remove any of them.
     description = "Hindi, Tamil and Telugu dubbed anime and cartoons from WatchAnimeWorld"
     authors = listOf("Alif")
 
