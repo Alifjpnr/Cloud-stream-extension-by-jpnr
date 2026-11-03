@@ -2,6 +2,7 @@
 package recloudstream
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
 
@@ -22,9 +23,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         "" to "Latest Anime & Cartoons"
     )
 
-    // -----------------------------------------
     // HOMEPAGE
-    // -----------------------------------------
 
     override suspend fun getMainPage(
         page: Int,
@@ -32,7 +31,6 @@ class WatchAnimeWorldProvider : MainAPI() {
     ): HomePageResponse? {
 
         val document = app.get(mainUrl).document
-
         val homeCategories = ArrayList<HomePageList>()
 
         val items = document.select(
@@ -40,48 +38,38 @@ class WatchAnimeWorldProvider : MainAPI() {
             ul#episode_by_temp li,
             section.episodes ul.post-lst li,
             ul.post-lst li,
-            .post-lst li,
             article.post,
             .post-item,
             .anime-card
             """.trimIndent()
-        ).mapNotNull { element ->
-            element.toSearchResult()
-        }
+        ).mapNotNull { it.toSearchResult() }
 
         if (items.isNotEmpty()) {
             homeCategories.add(
-                HomePageList(
-                    request.name.ifBlank { "Latest Anime & Cartoons" },
-                    items
-                )
+                HomePageList(request.name, items)
             )
         }
 
         return newHomePageResponse(homeCategories, false)
     }
 
-    // -----------------------------------------
     // SEARCH RESULT PARSER
-    // -----------------------------------------
 
     private fun Element.toSearchResult(): SearchResponse? {
 
-        val linkElement = selectFirst(
-            "a.lnk-blk[href], a[href]"
-        ) ?: return null
+        val link = selectFirst("a.lnk-blk[href], a[href]")
+            ?: return null
 
-        val href = fixUrlNull(
-            linkElement.attr("href")
-        ) ?: return null
+        val href = fixUrlNull(link.attr("href"))
+            ?: return null
 
-        val title = (
-            selectFirst(
-                "h2.entry-title, h2, h3, .entry-title, .post-title"
-            )?.text()?.trim()?.takeIf { it.isNotBlank() }
-                ?: linkElement.attr("title").trim().takeIf { it.isNotBlank() }
-                ?: linkElement.text().trim().takeIf { it.isNotBlank() }
-            ) ?: return null
+        val title = selectFirst(
+            "h2.entry-title, h2, h3, .entry-title"
+        )?.text()?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: link.attr("title").takeIf { it.isNotBlank() }
+            ?: link.text().trim().takeIf { it.isNotBlank() }
+            ?: return null
 
         return newAnimeSearchResponse(
             title,
@@ -92,9 +80,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         }
     }
 
-    // -----------------------------------------
-    // IMAGE URL PARSER
-    // -----------------------------------------
+    // IMAGE PARSER
 
     private fun Element.getImageUrl(): String? {
 
@@ -108,9 +94,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         return fixUrlNull(imageUrl)
     }
 
-    // -----------------------------------------
     // SEARCH
-    // -----------------------------------------
 
     override suspend fun search(
         query: String
@@ -123,14 +107,10 @@ class WatchAnimeWorldProvider : MainAPI() {
 
         return document.select(
             "article.post, article, .post-lst li, .post-item, .anime-card"
-        ).mapNotNull { article ->
-            article.toSearchResult()
-        }
+        ).mapNotNull { it.toSearchResult() }
     }
 
-    // -----------------------------------------
     // LOAD ANIME DETAILS
-    // -----------------------------------------
 
     override suspend fun load(
         url: String
@@ -140,7 +120,8 @@ class WatchAnimeWorldProvider : MainAPI() {
 
         val rawTitle = document.selectFirst(
             "h1.entry-title, h1.post-title, main h1, h1"
-        )?.text()?.trim()?.takeIf { it.isNotBlank() }
+        )?.text()?.trim()
+            ?.takeIf { it.isNotBlank() }
             ?: document.selectFirst("title")?.text()?.trim()
             ?: "Anime"
 
@@ -152,23 +133,16 @@ class WatchAnimeWorldProvider : MainAPI() {
             ""
         ).trim().ifBlank { "Anime" }
 
-        val posterElement = document.selectFirst(
-            "div.bghd img, div.post-thumbnail img, figure img, .anime-poster img"
-        )
-
-        val posterUrl = posterElement?.let {
-            it.getImageUrl()
-        } ?: document.selectFirst(
-            "meta[property=og:image]"
-        )?.attr("content")?.let {
-            fixUrlNull(it)
-        }
+        val posterUrl = document.selectFirst(
+            "div.bghd img, div.post-thumbnail img, figure img"
+        )?.getImageUrl()
+            ?: document.selectFirst(
+                "meta[property=og:image]"
+            )?.attr("content")?.let { fixUrlNull(it) }
 
         val description = document.selectFirst(
             "div.overviewCss, .entry-content, .description, .overview"
         )?.text()?.trim()
-
-        // Episode list
 
         val episodeElements = document.select(
             """
@@ -192,54 +166,43 @@ class WatchAnimeWorldProvider : MainAPI() {
 
             val episodeTitle = element.selectFirst(
                 "h2.entry-title, h3, .entry-title, .episode-title"
-            )?.text()?.trim()?.takeIf {
-                it.isNotBlank()
-            } ?: episodeLink.text().trim().ifBlank {
-                "Episode"
-            }
+            )?.text()?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: episodeLink.text().trim().ifBlank {
+                    "Episode"
+                }
 
-            val episodeLabel = element.selectFirst(
+            val episodeText = element.selectFirst(
                 "span.num-epi, .num-epi, .episode-number, .ep-num"
-            )?.text().orEmpty()
-
-            val numberSource = episodeLabel.ifBlank {
+            )?.text().orEmpty().ifBlank {
                 episodeTitle
             }
 
-            // Handles formats such as 1x02 and S1E02.
-
-            val seasonEpisodeMatch = Regex(
+            val match = Regex(
                 """(?i)s(?:eason)?\s*(\d+)\s*[- ]*e(?:p(?:isode)?)?\s*(\d+)"""
-            ).find(numberSource) ?: Regex(
+            ).find(episodeText) ?: Regex(
                 """(?i)(\d+)\s*[x×]\s*(\d+)"""
-            ).find(numberSource)
+            ).find(episodeText)
 
-            val seasonNumber = seasonEpisodeMatch
-                ?.groupValues
-                ?.getOrNull(1)
-                ?.toIntOrNull()
+            val seasonNumber = match
+                ?.groupValues?.getOrNull(1)?.toIntOrNull()
 
-            val episodeNumber = seasonEpisodeMatch
-                ?.groupValues
-                ?.getOrNull(2)
-                ?.toIntOrNull()
+            val episodeNumber = match
+                ?.groupValues?.getOrNull(2)?.toIntOrNull()
                 ?: Regex(
                     """(?i)(?:episode|ep)\s*[-:#.]?\s*(\d+)"""
-                ).find(numberSource)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.toIntOrNull()
+                ).find(episodeText)
+                    ?.groupValues?.getOrNull(1)?.toIntOrNull()
                 ?: Regex("""\b(\d+)\b""")
-                    .find(numberSource)
-                    ?.groupValues
-                    ?.getOrNull(1)
+                    .find(episodeText)
+                    ?.groupValues?.getOrNull(1)
                     ?.toIntOrNull()
 
             newEpisode(episodeUrl) {
-                this.name = episodeTitle
-                this.season = seasonNumber
-                this.episode = episodeNumber
-                this.posterUrl = element.getImageUrl()
+                name = episodeTitle
+                season = seasonNumber
+                episode = episodeNumber
+                posterUrl = element.getImageUrl()
             }
         }
 
@@ -248,8 +211,8 @@ class WatchAnimeWorldProvider : MainAPI() {
             url,
             TvType.Anime
         ) {
-            this.posterUrl = posterUrl
-            this.plot = description
+            posterUrl = posterUrl
+            plot = description
 
             addEpisodes(
                 DubStatus.Subbed,
@@ -258,9 +221,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         }
     }
 
-    // -----------------------------------------
-    // RESOLVE RELATIVE VIDEO URLS
-    // -----------------------------------------
+    // RESOLVE RELATIVE MEDIA URLS
 
     private fun resolveMediaUrl(
         baseUrl: String,
@@ -289,16 +250,16 @@ class WatchAnimeWorldProvider : MainAPI() {
             return origin + candidate
         }
 
-        val cleanBaseUrl = baseUrl
+        val cleanBase = baseUrl
             .substringBefore("?")
             .substringBefore("#")
 
         val directory = when {
-            cleanBaseUrl.endsWith("/") ->
-                cleanBaseUrl.trimEnd('/')
+            cleanBase.endsWith("/") ->
+                cleanBase.trimEnd('/')
 
-            cleanBaseUrl.length > origin.length ->
-                cleanBaseUrl.substringBeforeLast("/")
+            cleanBase.length > origin.length ->
+                cleanBase.substringBeforeLast("/")
 
             else -> origin
         }
@@ -306,9 +267,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         return "$directory/$candidate"
     }
 
-    // -----------------------------------------
     // LOAD VIDEO LINKS
-    // -----------------------------------------
 
     override suspend fun loadLinks(
         data: String,
@@ -338,7 +297,7 @@ class WatchAnimeWorldProvider : MainAPI() {
 
             val iframeUrl = fixUrlNull(rawSrc) ?: continue
 
-            // Try CloudStream's built-in extractors first.
+            // Built-in extractor support
 
             val extractorLoaded = loadExtractor(
                 url = iframeUrl,
@@ -352,13 +311,85 @@ class WatchAnimeWorldProvider : MainAPI() {
                 continue
             }
 
-            // Fallback for direct video sources.
+            // Direct video fallback
 
             try {
 
                 val iframeDocument = app.get(
                     iframeUrl,
                     headers = mapOf(
+                        "Referer" to data
+                    )
+                ).document
+
+                val videoElement = iframeDocument.selectFirst(
+                    "video source, video, source"
+                ) ?: continue
+
+                val directVideoSrc = videoElement.attr("src")
+                    .ifBlank { videoElement.attr("data-src") }
+
+                if (directVideoSrc.isBlank()) continue
+
+                val videoUrl = resolveMediaUrl(
+                    iframeUrl,
+                    directVideoSrc
+                )
+
+                val serverHost = iframeUrl
+                    .substringAfter("://")
+                    .substringBefore("/")
+                    .removePrefix("www.")
+
+                val serverName = when {
+                    iframeUrl.contains("zephyrix", true) ->
+                        "Zephyrix"
+
+                    iframeUrl.contains("abyss", true) ->
+                        "Abyss"
+
+                    else -> serverHost
+                }
+
+                val videoPath = videoUrl
+                    .substringBefore("?")
+                    .substringBefore("#")
+                    .lowercase()
+
+                val videoType = when {
+                    videoPath.endsWith(".m3u8") ->
+                        ExtractorLinkType.M3U8
+
+                    videoPath.endsWith(".mpd") ->
+                        ExtractorLinkType.DASH
+
+                    else ->
+                        ExtractorLinkType.VIDEO
+                }
+
+                callback(
+                    newExtractorLink(
+                        source = serverName,
+                        name = serverName,
+                        url = videoUrl,
+                        type = videoType
+                    ) {
+                        referer = iframeUrl
+                        quality = Qualities.Unknown.value
+                    }
+                )
+
+                found = true
+
+            } catch (e: Exception) {
+                logError(e)
+            }
+        }
+
+        return found
+    }
+}
+pOf(
                         "Referer" to data
                     )
                 ).document
