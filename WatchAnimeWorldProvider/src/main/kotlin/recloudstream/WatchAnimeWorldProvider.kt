@@ -63,7 +63,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         val document = app.get(url).document
         val title = document.selectFirst("title")?.text()?.replace(" - Anime World India", "")?.trim() ?: "Anime"
         val posterUrl = fixUrlNull(document.selectFirst("div.bghd img, div.post-thumbnail img")?.attr("src"))
-        val description = document.selectFirst("div.overviewCss, entry-content")?.text()
+        val description = document.selectFirst("div.overviewCss, .entry-content")?.text()
 
         // Extract episodes
         val episodes = document.select("ul#episode_by_temp li").mapNotNull { element ->
@@ -76,23 +76,22 @@ class WatchAnimeWorldProvider : MainAPI() {
             var epNum: Int? = null
             if (epNumText != null && epNumText.contains("x")) {
                 val parts = epNumText.split("x")
-                seasonNum = parts.getOrNull(0)?.toIntOrNull()
-                epNum = parts.getOrNull(1)?.toIntOrNull()
+                seasonNum = parts.getOrNull(0)?.trim()?.toIntOrNull()
+                epNum = parts.getOrNull(1)?.trim()?.toIntOrNull()
             }
 
-            Episode(
-                data = link,
-                name = epTitle,
-                season = seasonNum,
-                episode = epNum,
-                posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
-            )
+            newEpisode(link) {
+                this.name = epTitle
+                this.season = seasonNum
+                this.episode = epNum
+                this.posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
+            }
         }
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = posterUrl
             this.plot = description
-            this.episodes = episodes
+            addEpisodes(DubStatus.Dubbed, episodes) // change to DubStatus.Subbed if the site is subbed
         }
     }
 
@@ -104,7 +103,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        
+
         // Target all player options (Server 1 / Zephyrix and Server 2 / Abyss)
         val iframeElements = document.select("aside.video-player div.video iframe")
 
@@ -127,14 +126,16 @@ class WatchAnimeWorldProvider : MainAPI() {
                     if (!directVideoSrc.isNullOrEmpty()) {
                         val serverName = if (iframeUrl.contains("zephyrix")) "Server 1 (Zephyrix)" else "Server 2 (Abyss)"
                         callback(
-                            ExtractorLink(
+                            newExtractorLink(
                                 source = name,
                                 name = serverName,
-                                url = fixUrl(directVideoSrc),
-                                referer = iframeUrl,
-                                quality = Qualities.Unknown.value,
-                                isM3u8 = directVideoSrc.contains(".m3u8")
-                            )
+                                url = fixUrl(directVideoSrc)
+                            ) {
+                                this.referer = iframeUrl
+                                this.quality = Qualities.Unknown.value
+                                this.type = if (directVideoSrc.contains(".m3u8"))
+                                    ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            }
                         )
                     }
                 } catch (e: Exception) {
