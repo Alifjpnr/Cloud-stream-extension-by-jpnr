@@ -23,40 +23,22 @@ class WatchAnimeWorldProvider : MainAPI() {
         "" to "Latest Anime & Cartoons"
     )
 
-    // HOMEPAGE
+    // IMAGE URL
 
-    override suspend fun getMainPage(
-        page: Int,
-        request: MainPageRequest
-    ): HomePageResponse? {
+    private fun Element.imageUrl(): String? {
+        val img = selectFirst("img") ?: return null
 
-        val document = app.get(mainUrl).document
-        val homeCategories = ArrayList<HomePageList>()
+        val src = img.attr("data-src")
+            .ifBlank { img.attr("data-lazy-src") }
+            .ifBlank { img.attr("data-original") }
+            .ifBlank { img.attr("src") }
 
-        val items = document.select(
-            """
-            ul#episode_by_temp li,
-            section.episodes ul.post-lst li,
-            ul.post-lst li,
-            article.post,
-            .post-item,
-            .anime-card
-            """.trimIndent()
-        ).mapNotNull { it.toSearchResult() }
-
-        if (items.isNotEmpty()) {
-            homeCategories.add(
-                HomePageList(request.name, items)
-            )
-        }
-
-        return newHomePageResponse(homeCategories, false)
+        return fixUrlNull(src)
     }
 
-    // SEARCH RESULT PARSER
+    // SEARCH RESULT
 
     private fun Element.toSearchResult(): SearchResponse? {
-
         val link = selectFirst("a.lnk-blk[href], a[href]")
             ?: return null
 
@@ -66,7 +48,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         val title = selectFirst(
             "h2.entry-title, h2, h3, .entry-title"
         )?.text()?.trim()
-            ?.takeIf { it.isNotBlank() }
+            ?.takeIf { it.isNotEmpty() }
             ?: link.attr("title").takeIf { it.isNotBlank() }
             ?: link.text().trim().takeIf { it.isNotBlank() }
             ?: return null
@@ -76,22 +58,36 @@ class WatchAnimeWorldProvider : MainAPI() {
             href,
             TvType.Anime
         ) {
-            posterUrl = getImageUrl()
+            this.posterUrl = imageUrl()
         }
     }
 
-    // IMAGE PARSER
+    // HOMEPAGE
 
-    private fun Element.getImageUrl(): String? {
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse? {
 
-        val image = selectFirst("img") ?: return null
+        val document = app.get(mainUrl).document
 
-        val imageUrl = image.attr("data-src")
-            .ifBlank { image.attr("data-lazy-src") }
-            .ifBlank { image.attr("data-original") }
-            .ifBlank { image.attr("src") }
+        val items = document.select(
+            "ul#episode_by_temp li, section.episodes ul.post-lst li, ul.post-lst li, article.post"
+        ).mapNotNull {
+            it.toSearchResult()
+        }.distinctBy {
+            it.url
+        }
 
-        return fixUrlNull(imageUrl)
+        return newHomePageResponse(
+            listOf(
+                HomePageList(
+                    request.name,
+                    items
+                )
+            ),
+            false
+        )
     }
 
     // SEARCH
@@ -101,16 +97,19 @@ class WatchAnimeWorldProvider : MainAPI() {
     ): List<SearchResponse>? {
 
         val document = app.get(
-            "$mainUrl/",
-            params = mapOf("s" to query)
+            "$mainUrl/?s=$query"
         ).document
 
         return document.select(
-            "article.post, article, .post-lst li, .post-item, .anime-card"
-        ).mapNotNull { it.toSearchResult() }
+            "article.post, .post-lst li, article"
+        ).mapNotNull {
+            it.toSearchResult()
+        }.distinctBy {
+            it.url
+        }
     }
 
-    // LOAD ANIME DETAILS
+    // LOAD DETAILS
 
     override suspend fun load(
         url: String
@@ -118,101 +117,86 @@ class WatchAnimeWorldProvider : MainAPI() {
 
         val document = app.get(url).document
 
-        val rawTitle = document.selectFirst(
-            "h1.entry-title, h1.post-title, main h1, h1"
-        )?.text()?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: document.selectFirst("title")?.text()?.trim()
-            ?: "Anime"
+        val title = (
+            document.selectFirst(
+                "h1.entry-title, h1.post-title, h1"
+            )?.text()
+                ?: document.selectFirst("title")?.text()
+                ?: "Anime"
+            ).replace(
+                Regex(
+                    """\s*[-|–]\s*Anime World India.*$""",
+                    RegexOption.IGNORE_CASE
+                ),
+                ""
+            ).trim()
 
-        val title = rawTitle.replace(
-            Regex(
-                """\s*[-|–]\s*Anime World India.*$""",
-                RegexOption.IGNORE_CASE
-            ),
-            ""
-        ).trim().ifBlank { "Anime" }
-
-        val posterUrl = document.selectFirst(
+        val poster = document.selectFirst(
             "div.bghd img, div.post-thumbnail img, figure img"
-        )?.getImageUrl()
+        )?.imageUrl()
             ?: document.selectFirst(
                 "meta[property=og:image]"
-            )?.attr("content")?.let { fixUrlNull(it) }
+            )?.attr("content")?.let {
+                fixUrlNull(it)
+            }
 
         val description = document.selectFirst(
-            "div.overviewCss, .entry-content, .description, .overview"
+            "div.overviewCss, .entry-content"
         )?.text()?.trim()
 
         val episodeElements = document.select(
-            """
-            ul#episode_by_temp li,
-            section.episodes ul.post-lst li,
-            .episodes .post-lst li,
-            .episode-list li,
-            .episodes-list li
-            """.trimIndent()
+            "ul#episode_by_temp li"
         )
 
         val episodes = episodeElements.mapNotNull { element ->
 
-            val episodeLink = element.selectFirst(
-                "a.lnk-blk[href], a[href]"
+            val link = element.selectFirst(
+                "a.lnk-blk[href]"
             ) ?: return@mapNotNull null
 
             val episodeUrl = fixUrlNull(
-                episodeLink.attr("href")
+                link.attr("href")
             ) ?: return@mapNotNull null
 
             val episodeTitle = element.selectFirst(
-                "h2.entry-title, h3, .entry-title, .episode-title"
-            )?.text()?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?: episodeLink.text().trim().ifBlank {
-                    "Episode"
-                }
+                "h2.entry-title"
+            )?.text()?.trim() ?: "Episode"
 
             val episodeText = element.selectFirst(
-                "span.num-epi, .num-epi, .episode-number, .ep-num"
+                "span.num-epi"
             )?.text().orEmpty().ifBlank {
                 episodeTitle
             }
 
-            val match = Regex(
-                """(?i)s(?:eason)?\s*(\d+)\s*[- ]*e(?:p(?:isode)?)?\s*(\d+)"""
-            ).find(episodeText) ?: Regex(
+            val seasonEpisode = Regex(
                 """(?i)(\d+)\s*[x×]\s*(\d+)"""
             ).find(episodeText)
 
-            val seasonNumber = match
+            val season = seasonEpisode
                 ?.groupValues?.getOrNull(1)?.toIntOrNull()
 
-            val episodeNumber = match
+            val episode = seasonEpisode
                 ?.groupValues?.getOrNull(2)?.toIntOrNull()
                 ?: Regex(
                     """(?i)(?:episode|ep)\s*[-:#.]?\s*(\d+)"""
                 ).find(episodeText)
                     ?.groupValues?.getOrNull(1)?.toIntOrNull()
-                ?: Regex("""\b(\d+)\b""")
-                    .find(episodeText)
-                    ?.groupValues?.getOrNull(1)
-                    ?.toIntOrNull()
 
             newEpisode(episodeUrl) {
-                name = episodeTitle
-                season = seasonNumber
-                episode = episodeNumber
-                posterUrl = element.getImageUrl()
+                this.name = episodeTitle
+                this.season = season
+                this.episode = episode
+                this.posterUrl = element.imageUrl()
             }
         }
 
         return newAnimeLoadResponse(
-            title,
+            title.ifBlank { "Anime" },
             url,
             TvType.Anime
         ) {
-            posterUrl = posterUrl
-            plot = description
+            this.posterUrl = poster
+            this.plot = description
 
             addEpisodes(
                 DubStatus.Subbed,
@@ -221,53 +205,36 @@ class WatchAnimeWorldProvider : MainAPI() {
         }
     }
 
-    // RESOLVE RELATIVE MEDIA URLS
+    // MEDIA URL RESOLVER
 
-    private fun resolveMediaUrl(
-        baseUrl: String,
-        rawUrl: String
+    private fun resolveUrl(
+        base: String,
+        path: String
     ): String {
 
-        val candidate = rawUrl.trim()
+        val value = path.trim()
 
         if (
-            candidate.startsWith("http://", true) ||
-            candidate.startsWith("https://", true)
-        ) {
-            return candidate
-        }
+            value.startsWith("http://") ||
+            value.startsWith("https://")
+        ) return value
 
-        if (candidate.startsWith("//")) {
-            return "https:$candidate"
+        if (value.startsWith("//")) {
+            return "https:$value"
         }
 
         val origin = Regex(
-            """^https?://[^/]+""",
-            RegexOption.IGNORE_CASE
-        ).find(baseUrl)?.value ?: mainUrl
+            """^https?://[^/]+"""
+        ).find(base)?.value ?: mainUrl
 
-        if (candidate.startsWith("/")) {
-            return origin + candidate
+        if (value.startsWith("/")) {
+            return origin + value
         }
 
-        val cleanBase = baseUrl
-            .substringBefore("?")
-            .substringBefore("#")
-
-        val directory = when {
-            cleanBase.endsWith("/") ->
-                cleanBase.trimEnd('/')
-
-            cleanBase.length > origin.length ->
-                cleanBase.substringBeforeLast("/")
-
-            else -> origin
-        }
-
-        return "$directory/$candidate"
+        return base.substringBeforeLast("/") + "/" + value
     }
 
-    // LOAD VIDEO LINKS
+    // LOAD LINKS
 
     override suspend fun loadLinks(
         data: String,
@@ -278,42 +245,33 @@ class WatchAnimeWorldProvider : MainAPI() {
 
         val document = app.get(data).document
 
-        val iframeElements = document.select(
-            """
-            aside.video-player div.video iframe,
-            aside.video-player iframe,
-            .video-player iframe,
-            div.video iframe
-            """.trimIndent()
+        val iframes = document.select(
+            "aside.video-player div.video iframe, aside.video-player iframe"
         )
 
         var found = false
 
-        for (iframe in iframeElements) {
+        for (iframe in iframes) {
 
-            val rawSrc = iframe.attr("data-src")
-                .ifBlank { iframe.attr("data-lazy-src") }
+            val rawUrl = iframe.attr("data-src")
                 .ifBlank { iframe.attr("src") }
 
-            val iframeUrl = fixUrlNull(rawSrc) ?: continue
-
-            // Built-in extractor support
-
-            val extractorLoaded = loadExtractor(
-                url = iframeUrl,
-                referer = data,
-                subtitleCallback = subtitleCallback,
-                callback = callback
-            )
-
-            if (extractorLoaded) {
-                found = true
-                continue
-            }
-
-            // Direct video fallback
+            val iframeUrl = fixUrlNull(rawUrl)
+                ?: continue
 
             try {
+
+                val loaded = loadExtractor(
+                    url = iframeUrl,
+                    referer = data,
+                    subtitleCallback = subtitleCallback,
+                    callback = callback
+                )
+
+                if (loaded) {
+                    found = true
+                    continue
+                }
 
                 val iframeDocument = app.get(
                     iframeUrl,
@@ -322,45 +280,45 @@ class WatchAnimeWorldProvider : MainAPI() {
                     )
                 ).document
 
-                val videoElement = iframeDocument.selectFirst(
-                    "video source, video, source"
+                val video = iframeDocument.selectFirst(
+                    "video source, video"
                 ) ?: continue
 
-                val directVideoSrc = videoElement.attr("src")
-                    .ifBlank { videoElement.attr("data-src") }
+                val rawVideoUrl = video.attr("src")
+                    .ifBlank { video.attr("data-src") }
 
-                if (directVideoSrc.isBlank()) continue
+                if (rawVideoUrl.isBlank()) continue
 
-                val videoUrl = resolveMediaUrl(
+                val videoUrl = resolveUrl(
                     iframeUrl,
-                    directVideoSrc
+                    rawVideoUrl
                 )
 
-                val serverHost = iframeUrl
+                val host = iframeUrl
                     .substringAfter("://")
                     .substringBefore("/")
                     .removePrefix("www.")
 
-                val serverName = when {
+                val server = when {
                     iframeUrl.contains("zephyrix", true) ->
                         "Zephyrix"
 
                     iframeUrl.contains("abyss", true) ->
                         "Abyss"
 
-                    else -> serverHost
+                    else -> host
                 }
 
-                val videoPath = videoUrl
+                val cleanUrl = videoUrl
                     .substringBefore("?")
                     .substringBefore("#")
                     .lowercase()
 
-                val videoType = when {
-                    videoPath.endsWith(".m3u8") ->
+                val type = when {
+                    cleanUrl.endsWith(".m3u8") ->
                         ExtractorLinkType.M3U8
 
-                    videoPath.endsWith(".mpd") ->
+                    cleanUrl.endsWith(".mpd") ->
                         ExtractorLinkType.DASH
 
                     else ->
@@ -369,87 +327,10 @@ class WatchAnimeWorldProvider : MainAPI() {
 
                 callback(
                     newExtractorLink(
-                        source = serverName,
-                        name = serverName,
+                        source = server,
+                        name = server,
                         url = videoUrl,
-                        type = videoType
-                    ) {
-                        referer = iframeUrl
-                        quality = Qualities.Unknown.value
-                    }
-                )
-
-                found = true
-
-            } catch (e: Exception) {
-                logError(e)
-            }
-        }
-
-        return found
-    }
-}
-pOf(
-                        "Referer" to data
-                    )
-                ).document
-
-                val mediaElement = iframeDocument.selectFirst(
-                    "video source, video, source"
-                )
-
-                val directVideoSrc = mediaElement?.let {
-                    it.attr("src").ifBlank {
-                        it.attr("data-src")
-                    }
-                }
-
-                if (directVideoSrc.isNullOrBlank()) {
-                    continue
-                }
-
-                val videoUrl = resolveMediaUrl(
-                    iframeUrl,
-                    directVideoSrc
-                )
-
-                val serverHost = iframeUrl
-                    .substringAfter("://")
-                    .substringBefore("/")
-                    .removePrefix("www.")
-
-                val serverName = when {
-                    iframeUrl.contains("zephyrix", true) ->
-                        "Zephyrix"
-
-                    iframeUrl.contains("abyss", true) ->
-                        "Abyss"
-
-                    else -> serverHost
-                }
-
-                val cleanVideoUrl = videoUrl
-                    .substringBefore("?")
-                    .substringBefore("#")
-                    .lowercase()
-
-                val videoType = when {
-                    cleanVideoUrl.endsWith(".m3u8") ->
-                        ExtractorLinkType.M3U8
-
-                    cleanVideoUrl.endsWith(".mpd") ->
-                        ExtractorLinkType.DASH
-
-                    else ->
-                        ExtractorLinkType.VIDEO
-                }
-
-                callback(
-                    newExtractorLink(
-                        source = serverName,
-                        name = serverName,
-                        url = videoUrl,
-                        type = videoType
+                        type = type
                     ) {
                         this.referer = iframeUrl
                         this.quality = Qualities.Unknown.value
