@@ -1,92 +1,102 @@
-package recloudstream
+package com.ligustrum
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class WatchAnimeWorldProvider : MainAPI() {
     override var mainUrl = "https://watchanimeworld.one"
     override var name = "Watch Anime World"
-    override var lang = "hi"
+    override val supportedTypes = setOf(TvType.Anime, TvType.Cartoon)
+    override var lang = "hi" // Primary language set to Hindi
     override val hasMainPage = true
 
-    override val supportedTypes = setOf(
-        TvType.Anime,
-        TvType.Cartoon
-    )
-
-    override val mainPage = mainPageOf(
-        "" to "Latest Anime & Cartoons"
-    )
-
+    // 1. Home Page Sections (Populates CloudStream home screen)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(mainUrl).document
-        val items = document.select("ul#episode_by_temp li, section.episodes ul.post-lst li, article.post").mapNotNull { element ->
-            element.toSearchResult()
-        }.distinctBy { it.url }
+        val homeCategories = ArrayList<HomePageList>()
 
-        return newHomePageResponse(listOf(HomePageList(request.name, items)))
+        // Recent Episodes / Latest Series
+        val items = document.select("ul#episode_by_temp li, section.episodes ul.post-lst li").mapNotNull { element ->
+            element.toSearchResult()
+        }
+
+        if (items.isNotEmpty()) {
+            homeCategories.add(HomePageList("Latest Anime & Cartoons", items))
+        }
+
+        return newHomePageResponse(homeCategories)
     }
 
+    // Helper extension to convert HTML element to SearchResult
     private fun Element.toSearchResult(): SearchResponse? {
-        val titleElement = selectFirst("h2.entry-title, h2, h3") ?: return null
-        val linkElement = selectFirst("a.lnk-blk[href], a[href]") ?: return null
+        val linkElement = this.selectFirst("a.lnk-blk") ?: return null
         val href = fixUrlNull(linkElement.attr("href")) ?: return null
-        val title = titleElement.text().trim()
-        
-        val imgElement = selectFirst("img")
-        val poster = imgElement?.let { 
-            fixUrlNull(it.attr("data-src").ifBlank { it.attr("src") }) 
-        }
+        val title = this.selectFirst("h2.entry-title")?.text() ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("div.post-thumbnail img, figure img")?.attr("src"))
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
-            this.posterUrl = poster
+            this.posterUrl = posterUrl
         }
     }
 
+    // 2. Search Functionality
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("$mainUrl/?s=$query").document
-        return document.select("article.post, .post-lst li").mapNotNull { element ->
-            element.toSearchResult()
-        }.distinctBy { it.url }
+        val searchUrl = "$mainUrl/?s=$query"
+        val document = app.get(searchUrl).document
+
+        return document.select("article.post").mapNotNull { article ->
+            val title = article.selectFirst("h2.entry-title")?.text() ?: return@mapNotNull null
+            val href = fixUrlNull(article.selectFirst("a.lnk-blk")?.attr("href")) ?: return@mapNotNull null
+            val posterUrl = fixUrlNull(article.selectFirst("div.post-thumbnail img, figure img")?.attr("src"))
+
+            newAnimeSearchResponse(title, href, TvType.Anime) {
+                this.posterUrl = posterUrl
+            }
+        }
     }
 
+    // 3. Load Series & Episodes Details
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-        val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "Anime"
-        
-        val imgElement = document.selectFirst("div.bghd img, div.post-thumbnail img, figure img")
-        val poster = imgElement?.let { 
-            fixUrlNull(it.attr("data-src").ifBlank { it.attr("src") }) 
-        }
+        val title = document.selectFirst("title")?.text()?.replace(" - Anime World India", "")?.trim() ?: "Anime"
+        val posterUrl = fixUrlNull(document.selectFirst("div.bghd img, div.post-thumbnail img")?.attr("src"))
+        val description = document.selectFirst("div.overviewCss, entry-content")?.text()
 
-        val description = document.selectFirst("div.overviewCss, .entry-content")?.text()?.trim()
-
+        // Extract episodes
         val episodes = document.select("ul#episode_by_temp li").mapNotNull { element ->
-            val link = element.selectFirst("a.lnk-blk[href]") ?: return@mapNotNull null
-            val epUrl = fixUrlNull(link.attr("href")) ?: return@mapNotNull null
-            val epTitle = element.selectFirst("h2.entry-title")?.text()?.trim() ?: "Episode"
-            val numText = element.selectFirst("span.num-epi")?.text().orEmpty()
+            val link = fixUrlNull(element.selectFirst("a.lnk-blk")?.attr("href")) ?: return@mapNotNull null
+            val epTitle = element.selectFirst("h2.entry-title")?.text() ?: "Episode"
+            val epNumText = element.selectFirst("span.num-epi")?.text()
 
-            val regex = Regex("""(\d+)\s*[x×]\s*(\d+)""").find(numText)
-            val season = regex?.groupValues?.getOrNull(1)?.toIntOrNull()
-            val episode = regex?.groupValues?.getOrNull(2)?.toIntOrNull() 
-                ?: Regex("""(?:ep|episode)\s*(\d+)""", RegexOption.IGNORE_CASE).find(numText)?.groupValues?.getOrNull(1)?.toIntOrNull()
-
-            newEpisode(epUrl) {
-                this.name = epTitle
-                this.season = season
-                this.episode = episode
+            // Parse Season & Episode numbers if available (e.g., 4x2)
+            var seasonNum: Int? = null
+            var epNum: Int? = null
+            if (epNumText != null && epNumText.contains("x")) {
+                val parts = epNumText.split("x")
+                seasonNum = parts.getOrNull(0)?.toIntOrNull()
+                epNum = parts.getOrNull(1)?.toIntOrNull()
             }
+
+            Episode(
+                data = link,
+                name = epTitle,
+                season = seasonNum,
+                episode = epNum,
+                posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
+            )
         }
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
-            this.posterUrl = poster
+            this.posterUrl = posterUrl
             this.plot = description
-            addEpisodes(DubStatus.Subbed, episodes)
+            this.episodes = episodes
         }
     }
 
+    // 4. Extract Video Streams (Multi-Server Selection)
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -94,44 +104,45 @@ class WatchAnimeWorldProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        val iframes = document.select("aside.video-player iframe")
-        var success = false
+        
+        // Target all player options (Server 1 / Zephyrix and Server 2 / Abyss)
+        val iframeElements = document.select("aside.video-player div.video iframe")
 
-        for (iframe in iframes) {
-            val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }
-            val iframeUrl = fixUrlNull(src) ?: continue
+        for (iframe in iframeElements) {
+            // Get iframe src (checking both data-src and src attributes)
+            val rawSrc = iframe.attr("data-src").ifEmpty { iframe.attr("src") }
+            val iframeUrl = fixUrlNull(rawSrc) ?: continue
 
-            val loaded = loadExtractor(iframeUrl, data, subtitleCallback, callback)
-            if (loaded) {
-                success = true
-                continue
+            // 1. Handle Direct Extractor-supported players (e.g., AbyssPlayer / Zephyrix)
+            val loaded = loadExtractor(iframeUrl, data, subtitleCallback) { link ->
+                callback(link)
             }
 
-            try {
-                val iframeDoc = app.get(iframeUrl, headers = mapOf("Referer" to data)).document
-                val videoSource = iframeDoc.selectFirst("video source, video")?.attr("src") ?: continue
-                val videoUrl = fixUrl(videoSource)
+            // 2. Fallback: If no auto-extractor is found, load iframe page directly to resolve stream
+            if (!loaded) {
+                try {
+                    val iframeDoc = app.get(iframeUrl, headers = mapOf("Referer" to mainUrl)).document
+                    val directVideoSrc = iframeDoc.selectFirst("video source, video")?.attr("src")
 
-                val serverName = if (iframeUrl.contains("zephyrix", true)) "Zephyrix" else "Abyss"
-                val isM3u8 = videoUrl.contains(".m3u8", true)
-
-                callback(
-                    newExtractorLink(
-                        source = serverName,
-                        name = serverName,
-                        url = videoUrl,
-                        type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = iframeUrl
-                        this.quality = Qualities.Unknown.value
+                    if (!directVideoSrc.isNullOrEmpty()) {
+                        val serverName = if (iframeUrl.contains("zephyrix")) "Server 1 (Zephyrix)" else "Server 2 (Abyss)"
+                        callback(
+                            ExtractorLink(
+                                source = name,
+                                name = serverName,
+                                url = fixUrl(directVideoSrc),
+                                referer = iframeUrl,
+                                quality = Qualities.Unknown.value,
+                                isM3u8 = directVideoSrc.contains(".m3u8")
+                            )
+                        )
                     }
-                )
-                success = true
-            } catch (e: Exception) {
-                // Ignore individual frame errors and continue loop
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
 
-        return success
+        return true
     }
 }
