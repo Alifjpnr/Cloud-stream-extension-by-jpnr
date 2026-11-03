@@ -1,9 +1,7 @@
-package com.ligustrum
+package recloudstream
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class WatchAnimeWorldProvider : MainAPI() {
@@ -65,7 +63,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         val posterUrl = fixUrlNull(document.selectFirst("div.bghd img, div.post-thumbnail img")?.attr("src"))
         val description = document.selectFirst("div.overviewCss, entry-content")?.text()
 
-        // Extract episodes
+        // Extract episodes into a mutable list
         val episodes = document.select("ul#episode_by_temp li").mapNotNull { element ->
             val link = fixUrlNull(element.selectFirst("a.lnk-blk")?.attr("href")) ?: return@mapNotNull null
             val epTitle = element.selectFirst("h2.entry-title")?.text() ?: "Episode"
@@ -87,7 +85,7 @@ class WatchAnimeWorldProvider : MainAPI() {
                 episode = epNum,
                 posterUrl = fixUrlNull(element.selectFirst("img")?.attr("src"))
             )
-        }
+        }.toMutableList() // Fixed: converted to MutableList to match expected type[span_3](start_span)[span_3](end_span)
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = posterUrl
@@ -109,11 +107,10 @@ class WatchAnimeWorldProvider : MainAPI() {
         val iframeElements = document.select("aside.video-player div.video iframe")
 
         for (iframe in iframeElements) {
-            // Get iframe src (checking both data-src and src attributes)
             val rawSrc = iframe.attr("data-src").ifEmpty { iframe.attr("src") }
             val iframeUrl = fixUrlNull(rawSrc) ?: continue
 
-            // 1. Handle Direct Extractor-supported players (e.g., AbyssPlayer / Zephyrix)
+            // 1. Handle Direct Extractor-supported players
             val loaded = loadExtractor(iframeUrl, data, subtitleCallback) { link ->
                 callback(link)
             }
@@ -126,15 +123,18 @@ class WatchAnimeWorldProvider : MainAPI() {
 
                     if (!directVideoSrc.isNullOrEmpty()) {
                         val serverName = if (iframeUrl.contains("zephyrix")) "Server 1 (Zephyrix)" else "Server 2 (Abyss)"
+                        
+                        // Fixed: Using modern newExtractorLink builder instead of deprecated constructor[span_4](start_span)[span_4](end_span)
                         callback(
-                            ExtractorLink(
-                                source = name,
+                            newExtractorLink(
                                 name = serverName,
+                                source = name,
                                 url = fixUrl(directVideoSrc),
-                                referer = iframeUrl,
-                                quality = Qualities.Unknown.value,
-                                isM3u8 = directVideoSrc.contains(".m3u8")
-                            )
+                                type = if (directVideoSrc.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = iframeUrl
+                                this.quality = Qualities.Unknown.value
+                            }
                         )
                     }
                 } catch (e: Exception) {
