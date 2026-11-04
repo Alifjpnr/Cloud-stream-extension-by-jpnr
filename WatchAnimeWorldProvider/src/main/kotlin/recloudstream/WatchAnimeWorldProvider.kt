@@ -6,84 +6,103 @@ import org.jsoup.nodes.Element
 
 class WatchAnimeWorldProvider : MainAPI() {
     override var mainUrl = "https://watchanimeworld.one"
-    override var name = "Watch Anime World"
-    override var lang = "hi"
+    override var name = "Anime World India"
+    override var lang = "en"
     override val hasMainPage = true
-
     override val supportedTypes = setOf(
         TvType.Anime,
-        TvType.Cartoon
+        TvType.TvSeries,
+        TvType.Movie
     )
 
+    // Define home page tabs matching the site structure
     override val mainPage = mainPageOf(
-        "" to "Latest Anime & Cartoons"
+        "$mainUrl/trending/" to "Trending Anime",
+        "$mainUrl/movies/" to "Movies",
+        "$mainUrl/tvshows/" to "TV Series",
+        "$mainUrl/genre/hindi-dubbed/" to "Hindi Dubbed"
     )
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(mainUrl).document
-        val items = document.select("ul#episode_by_temp li, section.episodes ul.post-lst li, article.post").mapNotNull { element ->
-            element.toSearchResult()
-        }.distinctBy { it.url }
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse {
+        val url = if (page == 1) {
+            request.data
+        } else {
+            "${request.data}page/$page/"
+        }
 
-        return newHomePageResponse(listOf(HomePageList(request.name, items)))
+        val document = app.get(url).document
+        val home = document.select("div.item, article.item, div.result-item").mapNotNull { it.toSearchResult() }
+
+        return newHomePageResponse(
+            listOf(HomePageList(request.name, home)),
+            true
+        )
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val titleElement = selectFirst("h2.entry-title, h2, h3") ?: return null
-        val linkElement = selectFirst("a.lnk-blk[href], a[href]") ?: return null
-        val href = fixUrlNull(linkElement.attr("href")) ?: return null
-        val title = titleElement.text().trim()
-        
-        val imgElement = selectFirst("img")
-        val poster = imgElement?.let { 
-            fixUrlNull(it.attr("data-src").ifBlank { it.attr("src") }) 
+        val title = this.selectFirst("div.title h3, h3, .title")?.text() ?: return null
+        val href = this.selectFirst("a")?.attr("href") ?: return null
+        val posterUrl = this.selectFirst("img")?.let { img ->
+            img.attr("data-src").takeIf { it.isNotBlank() } ?: img.attr("src")
         }
+        
+        val tvType = if (href.contains("/movie")) TvType.Movie else TvType.Anime
 
-        return newAnimeSearchResponse(title, href, TvType.Anime) {
-            this.posterUrl = poster
+        return newMovieSearchResponse(title, href, tvType) {
+            this.posterUrl = posterUrl
         }
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("$mainUrl/?s=$query").document
-        return document.select("article.post, .post-lst li").mapNotNull { element ->
-            element.toSearchResult()
-        }.distinctBy { it.url }
+    override suspend fun search(query: String, page: Int): SearchResponseList {
+        val searchUrl = "$mainUrl/page/$page/?s=$query"
+        val document = app.get(searchUrl).document
+        val results = document.select("div.item, article.item, div.result-item").mapNotNull { it.toSearchResult() }
+        
+        return newSearchResponseList(results, true)
     }
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-        val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "Anime"
+
+        val title = document.selectFirst("div.sheader div.data h1, h1.title")?.text() ?: "Unknown"
+        val poster = document.selectFirst("div.poster img")?.let { it.attr("data-src").ifBlank { it.attr("src") } }
+        val description = document.selectFirst("div.wp-content p, div.description")?.text()
+        val genres = document.select("div.sgeneros a").map { it.text() }
         
-        val imgElement = document.selectFirst("div.bghd img, div.post-thumbnail img, figure img")
-        val poster = imgElement?.let { 
-            fixUrlNull(it.attr("data-src").ifBlank { it.attr("src") }) 
+        val episodes = mutableListOf<Episode>()
+        
+        // Parse episode lists from Torofilm theme layout
+        document.select("ul.episodios li, div.les-content a").forEach { element ->
+            val epHref = element.attr("href")
+            val epName = element.selectFirst(".episodiotitle, span")?.text() ?: element.text()
+            val epNumText = element.selectFirst(".num")?.text()
+            val episodeNum = epNumText?.filter { it.isDigit() }?.toIntOrNull()
+
+            episodes.add(
+                newEpisode(epHref) {
+                    name = epName
+                    episode = episodeNum
+                }
+            )
         }
 
-        val description = document.selectFirst("div.overviewCss, .entry-content")?.text()?.trim()
-
-        val episodes = document.select("ul#episode_by_temp li").mapNotNull { element ->
-            val link = element.selectFirst("a.lnk-blk[href]") ?: return@mapNotNull null
-            val epUrl = fixUrlNull(link.attr("href")) ?: return@mapNotNull null
-            val epTitle = element.selectFirst("h2.entry-title")?.text()?.trim() ?: "Episode"
-            val numText = element.selectFirst("span.num-epi")?.text().orEmpty()
-
-            val regex = Regex("""(\d+)\s*[x×]\s*(\d+)""").find(numText)
-            val season = regex?.groupValues?.getOrNull(1)?.toIntOrNull()
-            val episode = regex?.groupValues?.getOrNull(2)?.toIntOrNull() 
-                ?: Regex("""(?:ep|episode)\s*(\d+)""", RegexOption.IGNORE_CASE).find(numText)?.groupValues?.getOrNull(1)?.toIntOrNull()
-
-            newEpisode(epUrl) {
-                this.name = epTitle
-                this.season = season
-                this.episode = episode
+        val isMovie = url.contains("/movie/")
+        
+        return if (isMovie) {
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
+                this.posterUrl = poster
+                this.plot = description
+                this.tags = genres
             }
-        }
-
-        return newAnimeLoadResponse(title, url, TvType.Anime) {
-            this.posterUrl = poster
-            this.plot = description
-            addEpisodes(DubStatus.Subbed, episodes)
+        } else {
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+                this.posterUrl = poster
+                this.plot = description
+                this.tags = genres
+            }
         }
     }
 
@@ -94,44 +113,15 @@ class WatchAnimeWorldProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        val iframes = document.select("aside.video-player iframe")
-        var success = false
-
-        for (iframe in iframes) {
-            val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }
-            val iframeUrl = fixUrlNull(src) ?: continue
-
-            val loaded = loadExtractor(iframeUrl, data, subtitleCallback, callback)
-            if (loaded) {
-                success = true
-                continue
-            }
-
-            try {
-                val iframeDoc = app.get(iframeUrl, headers = mapOf("Referer" to data)).document
-                val videoSource = iframeDoc.selectFirst("video source, video")?.attr("src") ?: continue
-                val videoUrl = fixUrl(videoSource)
-
-                val serverName = if (iframeUrl.contains("zephyrix", true)) "Zephyrix" else "Abyss"
-                val isM3u8 = videoUrl.contains(".m3u8", true)
-
-                callback(
-                    newExtractorLink(
-                        source = serverName,
-                        name = serverName,
-                        url = videoUrl,
-                        type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = iframeUrl
-                        this.quality = Qualities.Unknown.value
-                    }
-                )
-                success = true
-            } catch (e: Exception) {
-                // Ignore loop failures
+        
+        // Extract embedded player links or iframes standard to Torofilm sites
+        document.select("iframe, .mobius iframe, .play-box-iframe iframe").forEach { iframe ->
+            val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
+            if (iframeUrl.isNotBlank()) {
+                loadExtractor(iframeUrl, data, subtitleCallback, callback)
             }
         }
 
-        return success
+        return true
     }
 }
