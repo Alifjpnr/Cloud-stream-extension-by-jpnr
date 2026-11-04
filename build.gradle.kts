@@ -7,11 +7,13 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        // Jitpack repo which contains our tools and dependencies
         maven("https://jitpack.io")
     }
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
+        // Cloudstream gradle plugin which makes everything work and builds plugins
         classpath("com.github.recloudstream:gradle:-SNAPSHOT")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
@@ -25,11 +27,9 @@ allprojects {
     }
 }
 
-fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) = 
-    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) = extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
 
-fun Project.android(configuration: BaseExtension.() -> Unit) = 
-    extensions.getByName<BaseExtension>("android").configuration()
+fun Project.android(configuration: BaseExtension.() -> Unit) = extensions.getByName<BaseExtension>("android").configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -37,7 +37,8 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/user/repo")
+        // Set to your exact GitHub repository path
+        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/Alifjpnr/Cloud-stream-extension-by-jpnr")
     }
 
     android {
@@ -45,19 +46,18 @@ subprojects {
 
         defaultConfig {
             minSdk = 21
+            compileSdkVersion(35)
             targetSdk = 35
         }
-        
-        compileSdkVersion(35) // Fixed: Using function call syntax for compatibility
 
         compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_11
-            targetCompatibility = JavaVersion.VERSION_11
+            sourceCompatibility = JavaVersion.VERSION_1_8
+            targetCompatibility = JavaVersion.VERSION_1_8
         }
 
         tasks.withType<KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_11)
+                jvmTarget.set(JvmTarget.JVM_1_8) // Required
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
@@ -71,14 +71,17 @@ subprojects {
         val implementation by configurations
 
         implementation("com.github.recloudstream.cloudstream:library:-SNAPSHOT")
+
+        // Standard dependencies for parsing and networking
         implementation(kotlin("stdlib"))
-        implementation("com.github.Blatzar:NiceHttp:0.4.11")
-        implementation("org.jsoup:jsoup:1.18.3")
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
-        implementation("com.github.teamnewpipe:NewPipeExtractor:v0.25.2")
+        implementation("com.github.Blatzar:NiceHttp:0.4.11") // HTTP Lib
+        implementation("org.jsoup:jsoup:1.18.3") // HTML Parser
+        // IMPORTANT: Do not bump Jackson above 2.13.1, as newer versions will break compatibility on older Android devices.
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1") // JSON Parser
+        implementation("com.github.teamnewpipe:NewPipeExtractor:v0.25.2") // NewPipe Extractor
     }
 }
 
-tasks.register<Delete>("clean") {
+task<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
