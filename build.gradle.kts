@@ -13,8 +13,8 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        // Cloudstream gradle plugin which makes everything work and builds plugins
-        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        // Cloudstream gradle plugin fixed to master-SNAPSHOT for JitPack resolution
+        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
     }
 }
@@ -72,7 +72,7 @@ subprojects {
 
         implementation("com.github.recloudstream.cloudstream:library:-SNAPSHOT")
 
-    // Standard dependencies for parsing and networking
+        // Standard dependencies for parsing and networking
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11") // HTTP Lib
         implementation("org.jsoup:jsoup:1.18.3") // HTML Parser
