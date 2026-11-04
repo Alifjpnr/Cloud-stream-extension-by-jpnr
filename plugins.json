@@ -1,0 +1,26 @@
+[
+    {
+        "iconUrl": "https://i.ibb.co.com/nNCF6Rf1/inbound1992029313120305633.jpg",
+        "jarFileSize": 41305,
+        "fileHash": "sha256-700cba7ca23d68f7b55846230ef7ec86cb85df980b3f0f554eaca3f68f8d6da5",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/Alifjpnr/Cloud-stream-extension-by-jpnr",
+        "fileSize": 11980,
+        "status": 1,
+        "authors": [
+            "Alif"
+        ],
+        "tvTypes": [
+            "Anime",
+            "TvSeries",
+            "Movie"
+        ],
+        "version": 1,
+        "internalName": "WatchAnimeWorldProvider",
+        "jarUrl": "https://raw.githubusercontent.com/Alifjpnr/Cloud-stream-extension-by-jpnr/builds/WatchAnimeWorldProvider.jar",
+        "description": "Watch content from Anime World India",
+        "url": "https://raw.githubusercontent.com/Alifjpnr/Cloud-stream-extension-by-jpnr/builds/WatchAnimeWorldProvider.cs3",
+        "name": "WatchAnimeWorldProvider",
+        "jarHash": "sha256-77fb1c4e77b247948d406429c16168b1dc5042a4585c2f5d21446d9f76cd505d"
+    }
+]

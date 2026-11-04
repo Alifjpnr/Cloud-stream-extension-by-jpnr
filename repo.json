@@ -1,0 +1,8 @@
+{
+  "name": "JPNR Extension",
+  "description": "JPNR, made with pure love.(⁠•⁠‿⁠•⁠)",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/Alifjpnr/Cloud-stream-extension-by-jpnr/builds/plugins.json"
+  ]
+}
