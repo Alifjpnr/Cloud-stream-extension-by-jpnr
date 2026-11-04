@@ -6,7 +6,7 @@ import org.jsoup.nodes.Element
 
 class WatchAnimeWorldProvider : MainAPI() {
     override var mainUrl = "https://watchanimeworld.one"
-    override var name = "Anime World India"
+    override var name = "Anime World India -JPNR"
     override var lang = "hi"
     override val hasMainPage = true
     override val supportedTypes = setOf(
