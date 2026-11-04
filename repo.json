@@ -1,6 +1,6 @@
 {
   "name": "JPNR Extension",
-  "description": "Custom extensions by JPNR",
+  "description": "JPNR, made wirh pure love.",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/Alifjpnr/Cloud-stream-extension-by-jpnr/builds/plugins.json"
