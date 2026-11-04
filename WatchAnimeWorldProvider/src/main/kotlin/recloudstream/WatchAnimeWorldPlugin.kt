@@ -1,11 +1,12 @@
 package recloudstream
 
-import com.lagradost.cloudstream3.plugins.BasePlugin
+import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
+import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
-class WatchAnimeWorldPlugin : BasePlugin() {
-    override fun load() {
+class AnimeWorldPlugin : Plugin() {
+    override fun load(context: Context) {
         registerMainAPI(WatchAnimeWorldProvider())
     }
 }
