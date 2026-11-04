@@ -6,7 +6,7 @@ cloudstream {
 
     status = 1
     tvTypes = listOf("Anime", "TvSeries", "Movie")
-    iconUrl = "https://animeworldindia-offcial.cyou/assets/logo.png"
+    iconUrl = "https://i.ibb.co.com/nNCF6Rf1/inbound1992029313120305633.jpg"
 
     isCrossPlatform = true
 }
