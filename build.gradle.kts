@@ -72,7 +72,7 @@ subprojects {
 
         implementation("com.github.recloudstream.cloudstream:library:-SNAPSHOT")
 
-        // Standard dependencies for parsing and networking
+    // Standard dependencies for parsing and networking
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11") // HTTP Lib
         implementation("org.jsoup:jsoup:1.18.3") // HTML Parser
