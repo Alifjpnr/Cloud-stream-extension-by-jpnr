@@ -6,7 +6,6 @@ import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
 class WatchAnimeWorldProvider : MainAPI() {
@@ -216,6 +215,103 @@ class WatchAnimeWorldProvider : MainAPI() {
         val parts = withoutNum.split("-").filter { it.isNotBlank() && it != "ep" && it != "episode" }
         val name = parts.joinToString(" ")
             .replace(Regex("\\s+/\\s*"), " ")
+            .replace("/", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        return if (name.isNotBlank()) name else "Episode ${epNum ?: ""}".trim()
+    }
+
+    private suspend fun fetchSeasonEpisodes(postId: String, season: Int): List<String> {
+        if (postId.isBlank()) return emptyList()
+        return try {
+            val ajaxUrl = "$mainUrl/wp-admin/admin-ajax.php?action=action_select_season&season=$season&post=$postId"
+            val response = app.get(ajaxUrl, headers = mapOf(
+                "Referer" to mainUrl,
+                "X-Requested-With" to "XMLHttpRequest"
+            ))
+            val doc = Jsoup.parse(response.text)
+            doc.select("a[href*=/episode/]").map { it.attr("href") }.distinct()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        loadFirebaseUrl()
+        return try {
+            val response = app.get(data)
+            val doc = Jsoup.parse(response.text)
+
+            val iframes = doc.select("iframe, .mobius iframe, .play-box-iframe iframe").mapNotNull { el ->
+                val src = el.attr("data-src").ifBlank { el.attr("src") }
+                if (src.isNotBlank()) src else null
+            }.distinct()
+
+            var found = false
+            for (iframe in iframes) {
+                if (iframe.contains("zephyrix") || iframe.contains("zephyrflick")) {
+                    if (resolveZephyrix(iframe, subtitleCallback, callback)) found = true
+                } else {
+                    if (loadExtractor(iframe, data, subtitleCallback, callback)) found = true
+                }
+            }
+            found
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private suspend fun resolveZephyrix(
+        iframeUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        return try {
+            val videoId = Regex("/video/([a-f0-9]+)").find(iframeUrl)?.groupValues?.get(1) ?: return false
+            val playerBase = Regex("(https?://[^/]+)").find(iframeUrl)?.groupValues?.get(1) ?: return false
+
+            val response = app.post(
+                "$playerBase/player/index.php?data=$videoId&do=getVideo",
+                data = mapOf("hash" to videoId, "r" to "$mainUrl/"),
+                headers = mapOf(
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Origin" to playerBase,
+                    "Referer" to "$playerBase/video/$videoId",
+                    "Accept" to "application/json, text/javascript, */*; q=0.01"
+                ),
+                timeout = 30_000L
+            )
+            val video = parseJson<ZephyrixVideo>(response.text)
+            val streamUrl = video.videoSource ?: video.securedLink ?: return false
+            val absoluteUrl = if (streamUrl.startsWith("http")) streamUrl else playerBase + streamUrl
+
+            val link = newExtractorLink(
+                name,
+                "Anime World India - JPNR",
+                absoluteUrl,
+                ExtractorLinkType.M3U8
+            ) {
+                this.quality = Qualities.Unknown.value
+                this.referer = "$playerBase/"
+                this.headers = mapOf(
+                    "Accept" to "*/*",
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                )
+            }
+            callback.invoke(link)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+}
+ex("\\s+/\\s*"), " ")
             .replace("/", " ")
             .replace(Regex("\\s+"), " ")
             .trim()
