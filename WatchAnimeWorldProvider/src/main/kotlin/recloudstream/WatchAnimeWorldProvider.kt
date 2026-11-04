@@ -15,6 +15,7 @@ class WatchAnimeWorldProvider : MainAPI() {
         TvType.Movie
     )
 
+    
     // Define home page tabs matching the site structure
     override val mainPage = mainPageOf(
         "$mainUrl/trending/" to "Trending Anime",
