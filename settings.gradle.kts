@@ -8,6 +8,7 @@ pluginManagement {
 
 rootProject.name = "CloudstreamPlugins"
 
+
 // List folder names here if you want to skip building them (e.g., listOf("TwitchProvider"))
 val disabled = listOf<String>()
 
