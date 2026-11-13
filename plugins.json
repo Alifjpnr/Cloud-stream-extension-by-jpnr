@@ -22,11 +22,9 @@
         "url": "https://raw.githubusercontent.com/Alifjpnr/Cloud-stream-extension-by-jpnr/builds/WatchAnimeWorldProvider.cs3",
         "name": "WatchAnimeWorldProvider",
         "jarHash": "sha256-77fb1c4e77b247948d406429c16168b1dc5042a4585c2f5d21446d9f76cd505d"
-    } ,
-
-    
+    },
     {
-        "url": "https://raw.githubusercontent.com/phisher98/CXXX/builds/HentaiHaven.cs3",
+        "url": "https://raw.githubusercontent.com/Alifjpnr/Cloud-stream-extension-by-jpnr/builds/HentaiHaven.cs3",
         "status": 1,
         "version": 7,
         "name": "HentaiHaven",
@@ -36,7 +34,7 @@
         ],
         "description": "",
         "fileSize": 18409,
-        "repositoryUrl": "https://github.com/phisher98/CXXX",
+        "repositoryUrl": "https://github.com/Alifjpnr/Cloud-stream-extension-by-jpnr",
         "language": "en",
         "tvTypes": [
             "NSFW"
