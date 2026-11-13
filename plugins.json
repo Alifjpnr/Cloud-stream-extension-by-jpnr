@@ -23,4 +23,26 @@
         "name": "WatchAnimeWorldProvider",
         "jarHash": "sha256-77fb1c4e77b247948d406429c16168b1dc5042a4585c2f5d21446d9f76cd505d"
     }
+
+    // Test project for shits hihi ... copied from cxxx repo
+    {
+        "url": "https://raw.githubusercontent.com/phisher98/CXXX/builds/HentaiHaven.cs3",
+        "status": 1,
+        "version": 7,
+        "name": "HentaiHaven",
+        "internalName": "HentaiHaven",
+        "authors": [
+            "Jace"
+        ],
+        "description": "",
+        "fileSize": 18409,
+        "repositoryUrl": "https://github.com/phisher98/CXXX",
+        "language": "en",
+        "tvTypes": [
+            "NSFW"
+        ],
+        "iconUrl": "https://www.google.com/s2/favicons?domain=hentaihaven.xxx&sz=%size%",
+        "apiVersion": 1,
+        "fileHash": "sha256-fba4a4a8963f01683ddc8bf8fdb4b9ca77975e33a1f302e4d203df38f5f04c7c"
+    }
 ]
