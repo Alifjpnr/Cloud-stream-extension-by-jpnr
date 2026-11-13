@@ -22,9 +22,9 @@
         "url": "https://raw.githubusercontent.com/Alifjpnr/Cloud-stream-extension-by-jpnr/builds/WatchAnimeWorldProvider.cs3",
         "name": "WatchAnimeWorldProvider",
         "jarHash": "sha256-77fb1c4e77b247948d406429c16168b1dc5042a4585c2f5d21446d9f76cd505d"
-    }
+    } ,
 
-    "//Test project for shits hihi ... copied from cxxx repo"
+    
     {
         "url": "https://raw.githubusercontent.com/phisher98/CXXX/builds/HentaiHaven.cs3",
         "status": 1,
