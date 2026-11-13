@@ -12,7 +12,7 @@ rootProject.name = "JPNR Extension"
 include("WatchAnimeWorldProvider")
 
 // Optional: include the other providers if you want them built too
-// include("provider name")
+include("HentaiHaven")
 // include("provider name")
 // include("provider name")
 // include("provider name")
